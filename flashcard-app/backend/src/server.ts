@@ -116,6 +116,42 @@ app.post('/api/day/next', (req, res) => {
     }
 });
 
+
+app.post('/api/flashcards', (req: Request, res: Response) => {
+  try {
+    const { front, back, hint, tags } = req.body;
+
+    if (!front || !back) {
+      return res.status(400).json({ error: "Front and back are required." });
+    }
+
+    const card = new Flashcard(
+      front,
+      back,
+      hint || '',
+      Array.isArray(tags) ? tags : undefined
+    );
+
+    const currentBuckets = getBuckets();
+    const updatedBuckets = new Map(currentBuckets);
+
+    if (!updatedBuckets.has(0)) {
+      updatedBuckets.set(0, new Set());
+    }
+
+    updatedBuckets.get(0)?.add(card);
+    setBuckets(updatedBuckets);
+
+    console.log(`New card added: "${front}"`);
+    res.status(201).json({ message: "Flashcard created successfully." });
+  } catch (error) {
+    console.error("Error creating flashcard:", error);
+    res.status(500).json({ error: "Failed to create flashcard." });
+  }
+});
+
+  
+
 app.listen(PORT, () => {
     console.log(`Server is running on port ${PORT}`);
 });
