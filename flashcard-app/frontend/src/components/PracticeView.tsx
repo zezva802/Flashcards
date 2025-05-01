@@ -6,22 +6,52 @@ import GestureRecognizer from "./GestureRecognizer";
 import "./PracticeView.css";
 
 /**
- * Displays a practice session for flashcards. Handles card progression,
- * answer submission, and optional gesture-based input.
+ * PracticeView component is the main interface for flashcard practice sessions.
+ *
+ * This component manages:
+ * - Loading and displaying flashcards for the current study session
+ * - Tracking user progress through the deck
+ * - Handling user answers and difficulty ratings
+ * - Optional gesture-based control for accessibility/alternative input
+ * - State transitions between cards and practice days
+ *
+ * @returns React component that renders the entire flashcard practice experience
+ * @spec.behavior Automatically loads cards on mount and manages the complete practice workflow
  */
 const PracticeView: React.FC = () => {
-  const [practiceCards, setPracticeCards] = useState<Flashcard[]>([]);
-  const [currentCardIndex, setCurrentCardIndex] = useState(0);
-  const [showBack, setShowBack] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [day, setDay] = useState(1);
-  const [sessionFinished, setSessionFinished] = useState(false);
-  const [cardKey, setCardKey] = useState(0); // Used to force re-render on card change
-  const [showGestureControls, setShowGestureControls] = useState(false);
-  const [gestureMessage, setGestureMessage] = useState<string | null>(null);
+  // Core state for flashcard practice session
+  const [practiceCards, setPracticeCards] = useState<Flashcard[]>([]); // All cards for current session
+  const [currentCardIndex, setCurrentCardIndex] = useState(0); // Index of current card being studied
+  const [showBack, setShowBack] = useState(false); // Whether card is flipped to reveal answer
+  const [isLoading, setIsLoading] = useState(false); // Loading state for API calls
+  const [error, setError] = useState<string | null>(null); // Error messages from API calls
+  const [day, setDay] = useState(1); // Current study day (affects which cards are shown)
+  const [sessionFinished, setSessionFinished] = useState(false); // Whether all cards for the day are complete
+  const [cardKey, setCardKey] = useState(0); // Used to force re-render of card component when switching cards
 
-  // Load practice cards and set initial state
+  // Gesture control system state
+  const [showGestureControls, setShowGestureControls] = useState(false); // Toggle for gesture control UI
+  const [gestureMessage, setGestureMessage] = useState<string | null>(null); // Feedback message for detected gestures
+
+  /**
+   * Load flashcards when component first mounts
+   *
+   * @spec.effect Initiates API call to load the first set of practice cards
+   */
+  useEffect(() => {
+    loadPracticeCards();
+  }, []);
+
+  /**
+   * Fetches a new set of flashcards from the backend for the current study day
+   *
+   * @returns Promise that resolves when cards are loaded and state is updated
+   * @spec.sideEffects
+   *   - Updates practiceCards state with new cards
+   *   - Updates day state with current day from backend
+   *   - Resets session state (currentCardIndex, sessionFinished)
+   *   - Sets error state if API call fails
+   */
   const loadPracticeCards = async (): Promise<void> => {
     try {
       setIsLoading(true);
@@ -36,7 +66,8 @@ const PracticeView: React.FC = () => {
         setSessionFinished(true);
       } else {
         setCurrentCardIndex(0);
-        setCardKey((prevKey) => prevKey + 1); // Reset key to force FlashcardDisplay update
+        // Force FlashcardDisplay to reset animation/state
+        setCardKey((prevKey) => prevKey + 1);
       }
     } catch (err) {
       console.error(err);
@@ -46,16 +77,29 @@ const PracticeView: React.FC = () => {
     }
   };
 
-  useEffect(() => {
-    loadPracticeCards();
-  }, []);
-
+  /**
+   * Reveals the back (answer) side of the current flashcard
+   *
+   * @spec.sideEffects
+   *   - Sets showBack state to true
+   *   - Clears any gesture message feedback
+   */
   const handleShowBack = (): void => {
     setShowBack(true);
     setGestureMessage(null);
   };
 
-  // Submit the difficulty rating for the current card and move to the next one
+  /**
+   * Processes the user's answer difficulty rating and advances to the next card
+   *
+   * @param difficulty The user's rating of how difficult the card was to remember
+   * @returns Promise that resolves when answer is submitted and next card is ready
+   * @spec.sideEffects
+   *   - Submits answer to backend API
+   *   - Advances to next card or marks session as finished
+   *   - Resets card display state (showBack) for next card
+   *   - Sets error state if API call fails
+   */
   const handleAnswer = async (difficulty: AnswerDifficulty): Promise<void> => {
     try {
       const currentCard = practiceCards[currentCardIndex];
@@ -64,14 +108,14 @@ const PracticeView: React.FC = () => {
       setShowBack(false);
       setGestureMessage(null);
 
+      // Wait briefly before moving to next card for user feedback
       if (currentCardIndex + 1 < practiceCards.length) {
-        // Slight delay to allow button feedback to display
         setTimeout(() => {
           setCurrentCardIndex((prev) => prev + 1);
-          setCardKey((prevKey) => prevKey + 1);
+          setCardKey((prevKey) => prevKey + 1); // Trigger re-render
         }, 300);
       } else {
-        setSessionFinished(true);
+        setSessionFinished(true); // No more cards
       }
     } catch (err) {
       console.error(err);
@@ -79,6 +123,16 @@ const PracticeView: React.FC = () => {
     }
   };
 
+  /**
+   * Advances the study session to the next day
+   *
+   * @returns Promise that resolves when day is advanced and new cards are loaded
+   * @spec.sideEffects
+   *   - Calls backend API to advance to next day
+   *   - Loads new practice cards for the new day
+   *   - Resets card display state
+   *   - Sets error state if API call fails
+   */
   const handleNextDay = async (): Promise<void> => {
     try {
       await advanceDay();
@@ -91,17 +145,32 @@ const PracticeView: React.FC = () => {
     }
   };
 
-  // Gesture handling logic with cooldown to prevent multiple triggers
-  const lastGestureRef = useRef<string | null>(null);
-  const lastGestureTimeRef = useRef<number>(0);
+  // References for gesture recognition cooldown system
+  const lastGestureRef = useRef<string | null>(null); // Stores the last detected gesture
+  const lastGestureTimeRef = useRef<number>(0); // Timestamp of last gesture detection
 
+  /**
+   * Handles detection of gestures and translates them into card actions
+   *
+   * @param gesture String identifier of the detected gesture
+   * @spec.requires Card must be flipped (showBack=true) for gestures to trigger answers
+   * @spec.behavior
+   *   - Implements a cooldown period to prevent accidental repeated gestures
+   *   - Maps gestures to specific difficulty ratings:
+   *     - thumbs_up → Easy
+   *     - thumbs_down → Hard
+   *     - victory → Wrong
+   *   - Shows visual feedback before submitting answer
+   */
   const handleGestureDetected = useCallback(
     (gesture: string): void => {
       const now = Date.now();
+      const cooldown = 2500; // ms
 
+      // Prevent repeated gesture triggers
       if (
         gesture !== lastGestureRef.current ||
-        now - lastGestureTimeRef.current > 2500
+        now - lastGestureTimeRef.current > cooldown
       ) {
         lastGestureRef.current = gesture;
         lastGestureTimeRef.current = now;
@@ -124,14 +193,14 @@ const PracticeView: React.FC = () => {
               message = "✌️ Wrong";
               break;
             default:
-              return;
+              return; // Unknown gesture
           }
 
           if (difficulty !== null) {
             setGestureMessage(message);
             setTimeout(() => {
-              handleAnswer(difficulty as AnswerDifficulty);
-            }, 800);
+              handleAnswer(difficulty);
+            }, 800); // Slight delay before answer is submitted
           }
         }
       }
@@ -139,18 +208,34 @@ const PracticeView: React.FC = () => {
     [showBack, handleAnswer]
   );
 
+  /**
+   * Toggles visibility of the gesture control interface
+   *
+   * @spec.sideEffects Inverts the showGestureControls state
+   */
   const toggleGestureControls = (): void => {
     setShowGestureControls((prev) => !prev);
   };
 
+  // Conditional rendering based on application state
+
+  /**
+   * Loading state view while cards are being fetched
+   */
   if (isLoading) {
     return <div className="practice-loading">Loading flashcards...</div>;
   }
 
+  /**
+   * Error state view when API operations fail
+   */
   if (error) {
     return <div className="practice-error">{error}</div>;
   }
 
+  /**
+   * Session completion view when all cards for the day are finished
+   */
   if (sessionFinished) {
     return (
       <div className="practice-container session-complete">
@@ -163,19 +248,19 @@ const PracticeView: React.FC = () => {
     );
   }
 
+  // Get current card for the active practice session
   const currentCard = practiceCards[currentCardIndex];
 
+  /**
+   * Main practice view - displays current card, progress indicators,
+   * answer difficulty buttons, and optional gesture controls
+   */
   return (
     <div className="practice-container">
       <div className="practice-header">
         <h2>Day {day}</h2>
         <div className="practice-controls">
-          <button
-            className={`btn ${
-              showGestureControls ? "btn-outline" : "btn-outline"
-            }`}
-            onClick={toggleGestureControls}
-          >
+          <button className={`btn btn-outline`} onClick={toggleGestureControls}>
             {showGestureControls ? "Hide" : "Show"} Gesture Controls
           </button>
         </div>
@@ -201,12 +286,14 @@ const PracticeView: React.FC = () => {
           !showGestureControls ? "full-width" : ""
         }`}
       >
+        {/* Gesture recognition panel (conditionally rendered) */}
         {showGestureControls && (
           <div className="gesture-recognizer-wrapper">
             <GestureRecognizer onGestureDetected={handleGestureDetected} />
           </div>
         )}
 
+        {/* Current flashcard display area */}
         {currentCard && (
           <div
             className={`flashcard-wrapper ${
@@ -218,6 +305,7 @@ const PracticeView: React.FC = () => {
               card={currentCard}
               showBack={showBack}
             />
+            {/* Answer difficulty buttons (only shown when card is flipped) */}
             {showBack && (
               <div className="difficulty-buttons">
                 {gestureMessage ? (
@@ -252,6 +340,7 @@ const PracticeView: React.FC = () => {
         )}
       </div>
 
+      {/* Show Answer button (only visible when card front is showing) */}
       {!showBack && (
         <button className="btn btn-primary" onClick={handleShowBack}>
           Show Answer
