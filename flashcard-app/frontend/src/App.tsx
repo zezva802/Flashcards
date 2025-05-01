@@ -1,11 +1,12 @@
-import React from 'react';
+import React from "react";
+import "./App.css";
 
-import PracticeView from './components/PracticeView';
+import PracticeView from "./components/PracticeView";
 
 const App: React.FC = () => {
   return (
-    <div style={{ textAlign: 'center' }}>
-      <h1>Flashcard Learner</h1>
+    <div className="app-container">
+      <h1 className="app-header">Flashcard Learner</h1>
       <PracticeView />
     </div>
   );
