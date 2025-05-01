@@ -4,6 +4,7 @@
 * This code runs in the popup.html context when the popup is opened.
 */
 document.addEventListener("DOMContentLoaded", () => {
+
   /**
    * Get reference to the front field input element.
    * This will be pre-populated with the selected text from the page.
@@ -22,11 +23,13 @@ document.addEventListener("DOMContentLoaded", () => {
      * Populate the front field with the selected text if available.
      * This provides a seamless experience by automatically filling the form.
      */
+
     if (response && response.text) {
       frontField.value = response.text;
     }
   });
   
+
   /**
    * Set up the form submission handler for saving flashcards.
    * Processes form data and sends it to the backend server.
@@ -44,10 +47,12 @@ document.addEventListener("DOMContentLoaded", () => {
      * Extract values from all form fields.
      * These will be used to create the flashcard in the database.
      */
+
     const front = document.getElementById("front").value;
     const back = document.getElementById("back").value;
     const hint = document.getElementById("hint").value;
     const tagsRaw = document.getElementById("tags")?.value;
+
     
     /**
      * Process the tags input from a comma-separated string to an array.
@@ -65,6 +70,7 @@ document.addEventListener("DOMContentLoaded", () => {
        * Make POST request to the flashcards API endpoint.
        * Sends all form data as a JSON object in the request body.
        */
+
       const response = await fetch("http://localhost:3001/api/flashcards", {
         method: "POST",
         headers: {
@@ -73,6 +79,7 @@ document.addEventListener("DOMContentLoaded", () => {
         body: JSON.stringify({ front, back, hint, tags })
       });
       
+
       /**
        * Handle the server response.
        * Success: Show confirmation message and close the popup.
@@ -90,8 +97,11 @@ document.addEventListener("DOMContentLoaded", () => {
        * Handle network or other errors that might occur during the fetch operation.
        * This typically happens if the server is down or unreachable.
        */
+
       console.error("Error:", error);
       alert("Error saving flashcard.");
     }
   });
+
  });
+

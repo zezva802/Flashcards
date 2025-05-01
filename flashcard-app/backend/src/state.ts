@@ -175,3 +175,13 @@ console.log("Initial state loaded:", {
   buckets: currentBuckets,
   cards: initialCards.length,
 });
+
+
+
+export function resetState(): void {
+// Replace with however you load cards
+  currentBuckets = new Map([[0, new Set(initialCards)]]);
+  practiceHistory = [];
+  currentDay = 0;
+}
+
