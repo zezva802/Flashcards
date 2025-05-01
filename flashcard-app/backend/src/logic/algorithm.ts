@@ -19,7 +19,6 @@ import { Flashcard, AnswerDifficulty, BucketMap } from "./flashcards";
  * @spec.requires buckets is a valid representation of flashcard buckets.
  */
 export function toBucketSets(buckets: BucketMap): Array<Set<Flashcard>> {
-
   if (buckets.size === 0) {
     return []; // Return empty array if there are no buckets
   }
@@ -28,7 +27,10 @@ export function toBucketSets(buckets: BucketMap): Array<Set<Flashcard>> {
   const maxBucket = Math.max(0, ...buckets.keys());
 
   // Initialize an array of empty sets
-  const bucketArray: Array<Set<Flashcard>> = Array.from({ length: maxBucket + 1 }, () => new Set());
+  const bucketArray: Array<Set<Flashcard>> = Array.from(
+    { length: maxBucket + 1 },
+    () => new Set()
+  );
 
   // Populate the array with the flashcards from the buckets map
   for (const [bucket, flashcards] of buckets.entries()) {
@@ -36,8 +38,6 @@ export function toBucketSets(buckets: BucketMap): Array<Set<Flashcard>> {
   }
 
   return bucketArray;
-  
-
 }
 
 /**
@@ -87,7 +87,6 @@ export function practice(
   return reviewSet;
 }
 
-
 /**
  * Updates a card's bucket number after a practice trial.
  *
@@ -133,7 +132,6 @@ export function update(
   return buckets;
 }
 
-
 /**
  * Generates a hint for a flashcard.
  *
@@ -144,7 +142,6 @@ export function update(
 export function getHint(card: Flashcard): string {
   return card.hint;
 }
-
 
 /**
  * Computes statistics about the user's learning progress.
@@ -165,7 +162,6 @@ export function computeProgress(buckets: BucketMap): number {
       highBucketCards += flashcards.size;
     }
   }
-
 
   const completion = totalCards > 0 ? (highBucketCards / totalCards) * 100 : 0;
   return completion;

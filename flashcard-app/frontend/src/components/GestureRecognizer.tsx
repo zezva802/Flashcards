@@ -3,18 +3,25 @@ import * as tf from "@tensorflow/tfjs";
 import * as handpose from "@tensorflow-models/handpose";
 import * as fp from "fingerpose";
 import "@tensorflow/tfjs-backend-webgl";
+import "./GestureRecognizer.css";
 
-const GestureRecognizer: React.FC = () => {
+interface GestureRecognizerProps {
+  onGestureDetected?: (gesture: string) => void;
+}
+
+const GestureRecognizer: React.FC<GestureRecognizerProps> = ({
+  onGestureDetected,
+}) => {
   const webcamRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [model, setModel] = useState<handpose.HandPose | null>(null);
   const [gestureName, setGestureName] = useState<string>("No gesture detected");
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+  const [confidence, setConfidence] = useState<number>(0);
 
-  // Define gestures
+  // Set up the custom gestures to recognize
   const createGestureEstimator = () => {
-    // Thumbs Up gesture
     const thumbsUp = new fp.GestureDescription("thumbs_up");
     thumbsUp.addCurl(fp.Finger.Thumb, fp.FingerCurl.NoCurl, 1.0);
     thumbsUp.addDirection(fp.Finger.Thumb, fp.FingerDirection.VerticalUp, 1.0);
@@ -28,8 +35,6 @@ const GestureRecognizer: React.FC = () => {
       fp.FingerDirection.DiagonalUpRight,
       0.75
     );
-
-    // Add curl for other fingers
     for (let finger of [
       fp.Finger.Index,
       fp.Finger.Middle,
@@ -39,7 +44,6 @@ const GestureRecognizer: React.FC = () => {
       thumbsUp.addCurl(finger, fp.FingerCurl.FullCurl, 1.0);
     }
 
-    // Thumbs Down gesture
     const thumbsDown = new fp.GestureDescription("thumbs_down");
     thumbsDown.addCurl(fp.Finger.Thumb, fp.FingerCurl.NoCurl, 1.0);
     thumbsDown.addDirection(
@@ -57,8 +61,6 @@ const GestureRecognizer: React.FC = () => {
       fp.FingerDirection.DiagonalDownRight,
       0.75
     );
-
-    // Add curl for other fingers
     for (let finger of [
       fp.Finger.Index,
       fp.Finger.Middle,
@@ -68,7 +70,6 @@ const GestureRecognizer: React.FC = () => {
       thumbsDown.addCurl(finger, fp.FingerCurl.FullCurl, 1.0);
     }
 
-    // Victory gesture
     const victory = new fp.GestureDescription("victory");
     victory.addCurl(fp.Finger.Index, fp.FingerCurl.NoCurl, 1.0);
     victory.addCurl(fp.Finger.Middle, fp.FingerCurl.NoCurl, 1.0);
@@ -94,8 +95,6 @@ const GestureRecognizer: React.FC = () => {
       fp.FingerDirection.DiagonalUpRight,
       0.5
     );
-
-    // Other fingers should be curled
     victory.addCurl(fp.Finger.Ring, fp.FingerCurl.FullCurl, 1.0);
     victory.addCurl(fp.Finger.Pinky, fp.FingerCurl.FullCurl, 1.0);
     victory.addCurl(fp.Finger.Thumb, fp.FingerCurl.HalfCurl, 0.5);
@@ -104,14 +103,13 @@ const GestureRecognizer: React.FC = () => {
     return new fp.GestureEstimator([thumbsUp, thumbsDown, victory]);
   };
 
-  // Initialize the camera
+  // Request access to the webcam and play the stream
   useEffect(() => {
     const setupCamera = async () => {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({
           video: { width: 640, height: 480 },
         });
-
         if (webcamRef.current) {
           webcamRef.current.srcObject = stream;
           webcamRef.current.onloadedmetadata = () => {
@@ -127,15 +125,12 @@ const GestureRecognizer: React.FC = () => {
     setupCamera();
   }, []);
 
-  // Load the handpose model
+  // Load the TensorFlow.js handpose model
   useEffect(() => {
     const loadModel = async () => {
       try {
-        // Initialize TensorFlow.js
         await tf.setBackend("webgl");
         await tf.ready();
-
-        // Load the handpose model
         const handposeModel = await handpose.load();
         setModel(handposeModel);
         setLoading(false);
@@ -150,10 +145,13 @@ const GestureRecognizer: React.FC = () => {
     loadModel();
   }, []);
 
-  // Detect hands and gestures
+  // Main hand detection and gesture recognition loop
   useEffect(() => {
     let animationFrameId: number;
     const gestureEstimator = createGestureEstimator();
+    let lastGestureTime = 0;
+    let stableGestureCount = 0;
+    let currentStableGesture = "";
 
     const detectHands = async () => {
       if (!model || !webcamRef.current || !canvasRef.current) {
@@ -163,130 +161,125 @@ const GestureRecognizer: React.FC = () => {
 
       const video = webcamRef.current;
 
-      // Make sure video is ready
       if (video.readyState !== 4) {
         animationFrameId = requestAnimationFrame(detectHands);
         return;
       }
 
-      // Get video properties
-      const videoWidth = video.videoWidth;
-      const videoHeight = video.videoHeight;
-
-      // Set canvas dimensions to match video
       const canvas = canvasRef.current;
-      canvas.width = videoWidth;
-      canvas.height = videoHeight;
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
 
       try {
-        // Detect hands
         const hands = await model.estimateHands(video);
-
-        // Draw results on canvas
         const ctx = canvas.getContext("2d");
         if (!ctx) return;
-
-        // Clear the canvas
         ctx.clearRect(0, 0, canvas.width, canvas.height);
 
         if (hands.length > 0) {
-          // Get the first detected hand
           const hand = hands[0];
-
-          // Draw hand landmarks
           drawHandLandmarks(hand.landmarks, ctx);
 
-          // Estimate gestures
           const gesture = gestureEstimator.estimate(hand.landmarks, 7.5);
 
-          // Define an interface for the gesture result
           interface GestureResult {
             name: string;
             score: number;
           }
 
           if (gesture.gestures && gesture.gestures.length > 0) {
-            // Find gesture with highest confidence
             const confidences = gesture.gestures.map(
               (g: GestureResult) => g.score
             );
             const maxConfidence = Math.max(...confidences);
             const maxConfidenceIndex = confidences.indexOf(maxConfidence);
-
-            // Update state with detected gesture name
             const detectedGesture = gesture.gestures[
               maxConfidenceIndex
             ] as GestureResult;
-            setGestureName(
-              `${detectedGesture.name} (${maxConfidence.toFixed(2)})`
-            );
+
+            setGestureName(detectedGesture.name);
+            setConfidence(maxConfidence);
+
+            const now = Date.now();
+
+            // Only trigger callback when the gesture is stable for a while
+            if (
+              detectedGesture.name === currentStableGesture &&
+              maxConfidence > 0.8
+            ) {
+              stableGestureCount++;
+
+              if (stableGestureCount > 15 && now - lastGestureTime > 2000) {
+                if (onGestureDetected) {
+                  onGestureDetected(detectedGesture.name);
+                  lastGestureTime = now;
+                  stableGestureCount = 0;
+                }
+              }
+            } else {
+              currentStableGesture = detectedGesture.name;
+              stableGestureCount = 1;
+            }
           } else {
             setGestureName("No gesture detected");
+            setConfidence(0);
+            currentStableGesture = "";
+            stableGestureCount = 0;
           }
         } else {
           setGestureName("No hand detected");
+          setConfidence(0);
+          currentStableGesture = "";
+          stableGestureCount = 0;
         }
       } catch (err) {
         console.error("Error during hand detection:", err);
       }
 
-      // Continue detection loop
       animationFrameId = requestAnimationFrame(detectHands);
     };
 
-    // Start detection loop
     detectHands();
 
-    // Clean up
     return () => {
       cancelAnimationFrame(animationFrameId);
     };
-  }, [model]);
+  }, [model, onGestureDetected]);
 
-  // Helper function to draw hand landmarks
+  // Render hand landmarks and bones between them
   const drawHandLandmarks = (
     landmarks: any[],
     ctx: CanvasRenderingContext2D
   ) => {
-    // Draw dots at each landmark point
     for (let i = 0; i < landmarks.length; i++) {
       const [x, y] = landmarks[i];
-
       ctx.beginPath();
       ctx.arc(x, y, 5, 0, 2 * Math.PI);
-      ctx.fillStyle = "red";
+      ctx.fillStyle = "#22c55e";
       ctx.fill();
     }
 
-    // Draw connections between landmarks
-    // Define connections based on hand anatomy
     const connections = [
-      // Thumb
       [0, 1],
       [1, 2],
       [2, 3],
       [3, 4],
-      // Index finger
       [0, 5],
       [5, 6],
       [6, 7],
       [7, 8],
-      // Middle finger
       [0, 9],
       [9, 10],
       [10, 11],
       [11, 12],
-      // Ring finger
       [0, 13],
       [13, 14],
       [14, 15],
       [15, 16],
-      // Pinky
       [0, 17],
       [17, 18],
       [18, 19],
       [19, 20],
-      // Palm
       [5, 9],
       [9, 13],
       [13, 17],
@@ -295,132 +288,102 @@ const GestureRecognizer: React.FC = () => {
     for (const [i, j] of connections) {
       const [x1, y1] = landmarks[i];
       const [x2, y2] = landmarks[j];
-
       ctx.beginPath();
       ctx.moveTo(x1, y1);
       ctx.lineTo(x2, y2);
-      ctx.strokeStyle = "blue";
+      ctx.strokeStyle = "#3b82f6";
       ctx.lineWidth = 2;
       ctx.stroke();
     }
   };
 
+  const getGestureIcon = () => {
+    switch (gestureName) {
+      case "thumbs_up":
+        return "👍";
+      case "thumbs_down":
+        return "👎";
+      case "victory":
+        return "✌️";
+      default:
+        return "👋";
+    }
+  };
+
+  const getGestureLabel = () => {
+    switch (gestureName) {
+      case "thumbs_up":
+        return "Thumbs Up (Easy)";
+      case "thumbs_down":
+        return "Thumbs Down (Hard)";
+      case "victory":
+        return "Victory Sign (Wrong)";
+      case "No hand detected":
+        return "No hand detected";
+      default:
+        return "No gesture detected";
+    }
+  };
+
   return (
     <div className="gesture-recognizer">
-      <div
-        className="webcam-container"
-        style={{ position: "relative", width: 640, height: 480 }}
-      >
+      <div className="webcam-container">
         {loading && (
-          <div
-            className="loading-overlay"
-            style={{
-              position: "absolute",
-              top: 0,
-              left: 0,
-              width: "100%",
-              height: "100%",
-              display: "flex",
-              justifyContent: "center",
-              alignItems: "center",
-              backgroundColor: "rgba(0, 0, 0, 0.7)",
-              color: "white",
-              zIndex: 10,
-            }}
-          >
-            Loading model... This may take a moment.
+          <div className="loading-overlay">
+            <div className="loading-spinner"></div>
+            <div>Loading hand tracking model...</div>
           </div>
         )}
-
-        {error && (
-          <div
-            className="error-message"
-            style={{
-              position: "absolute",
-              top: 0,
-              left: 0,
-              width: "100%",
-              height: "100%",
-              display: "flex",
-              justifyContent: "center",
-              alignItems: "center",
-              backgroundColor: "rgba(255, 0, 0, 0.7)",
-              color: "white",
-              zIndex: 10,
-            }}
-          >
-            {error}
-          </div>
-        )}
-
+        {error && <div className="error-message">{error}</div>}
         <video
           ref={webcamRef}
           autoPlay
           playsInline
           muted
-          style={{
-            transform: "scaleX(-1)",
-            width: "100%",
-            height: "100%",
-            objectFit: "cover",
-          }}
+          className="webcam-video"
         />
-
-        <canvas
-          ref={canvasRef}
-          style={{
-            position: "absolute",
-            top: 0,
-            left: 0,
-            width: "100%",
-            height: "100%",
-            transform: "scaleX(-1)",
-            zIndex: 1,
-          }}
-        />
+        <canvas ref={canvasRef} className="gesture-canvas" />
 
         <div
-          className="gesture-label"
-          style={{
-            position: "absolute",
-            top: 10,
-            left: 10,
-            backgroundColor: "rgba(0, 0, 0, 0.7)",
-            color: "white",
-            padding: "5px 10px",
-            borderRadius: "4px",
-            zIndex: 2,
-            fontSize: "18px",
-          }}
+          className={`gesture-label ${
+            gestureName !== "No hand detected" ? "active" : ""
+          }`}
         >
-          {gestureName}
+          <span className="gesture-icon">{getGestureIcon()}</span>
+          <span className="gesture-text">{getGestureLabel()}</span>
+          {confidence > 0 && (
+            <div className="confidence-bar">
+              <div
+                className="confidence-level"
+                style={{ width: `${confidence * 100}%` }}
+              ></div>
+            </div>
+          )}
         </div>
       </div>
 
-      <div
-        className="instructions"
-        style={{
-          marginTop: 20,
-          padding: 10,
-          backgroundColor: "#f0f0f0",
-          borderRadius: 5,
-        }}
-      >
-        <h3>Instructions:</h3>
-        <p>Show one of these gestures to the camera:</p>
-        <ul>
-          <li>
-            <strong>Thumbs Up:</strong> Point thumb up with other fingers curled
-          </li>
-          <li>
-            <strong>Thumbs Down:</strong> Point thumb down with other fingers
-            curled
-          </li>
-          <li>
-            <strong>Victory:</strong> Extend index and middle fingers in a V
-            shape
-          </li>
-        </ul>
+      <div className="instructions-panel">
+        <h3>Gesture Instructions:</h3>
+        <div className="gesture-instructions">
+          <div className="gesture-instruction">
+            <div className="gesture-icon">👍</div>
+            <div className="gesture-description">
+              <strong>Thumbs Up:</strong> Easy
+            </div>
+          </div>
+          <div className="gesture-instruction">
+            <div className="gesture-icon">👎</div>
+            <div className="gesture-description">
+              <strong>Thumbs Down:</strong> Hard
+            </div>
+          </div>
+          <div className="gesture-instruction">
+            <div className="gesture-icon">✌️</div>
+            <div className="gesture-description">
+              <strong>Victory Sign:</strong> Wrong
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );
